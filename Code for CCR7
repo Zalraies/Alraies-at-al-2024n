@@ -1,0 +1,111 @@
+Code for CCR7 and a nuclear staining like Lamin A/C quantification:
+/// macro Zahra measurement on IF
+
+/// measure different dyes inside the nucl (tot and periphery)
+/// measure whole cell expression
+
+name=getTitle();
+dir=getDirectory("image");
+run("Select None");
+
+shortName=substring(name,0,lengthOf(name)-4);
+
+dirOut=dir+"Output_Analysis"+File.separator();
+File.makeDirectory(dirOut);
+
+Stack.getDimensions(width, height, channels, slices, frames);
+
+minFilterSize=2000; /// filtre minimum en taille pour le analyse particle
+
+DapiChan=1;
+Dye1Chan=2; ///Nuclear Dye to measure
+Dye2Chan=3; /// cytoplasmic dye to measure
+
+Dye1Name="Lamin";
+Dye2Name="CCR7";
+
+
+midZ=floor(slices/2)+1;
+
+roiManager("reset");
+
+if(isOpen("Results")==true) {
+	selectWindow("Results");
+	run("Close");
+}
+
+run("Set Measurements...", "area mean shape display redirect=None decimal=3");
+
+/// make Nucl Mask
+selectWindow(name);
+run("Duplicate...", "title=NuclMask duplicate channels="+DapiChan+" slices="+midZ);
+run("Median...", "radius=2");
+run("Auto Threshold", "method=Yen white");
+run("Fill Holes");
+saveAs("Tiff",dirOut+shortName+"_MaskNucl.tif");
+
+selectWindow(shortName+"_MaskNucl.tif");
+
+roiManager("reset");
+
+/// open roiset
+roiManager("Open", dir+shortName+"cell.zip");
+
+nbCell=roiManager("Count");
+
+
+/// create images for measurment
+selectWindow(name);
+run("Duplicate...", "title=Dye1 duplicate channels="+Dye1Chan+" slices="+midZ);
+selectWindow(name);
+run("Duplicate...", "title=Dye2 duplicate channels="+Dye2Chan+" slices="+midZ);
+
+/// tables for measurement
+
+CellIndex=newArray(nbCell);
+NuclArea=newArray(nbCell);
+NuclDye1MeanInt=newArray(nbCell);
+CellArea=newArray(nbCell);
+CellDye2MeanInt=newArray(nbCell);
+
+/// Measurement
+
+for(cell=0;cell<nbCell;cell++) {
+	selectWindow("Dye2");
+	roiManager("select",cell);
+	run("Measure");
+
+	run("Set Measurements...", "area mean shape display redirect=Dye1 decimal=3");
+
+	selectWindow(shortName+"_MaskNucl.tif");
+	roiManager("select",cell);
+	run("Analyze Particles...", "size=2000-Infinity pixel display");
+
+	run("Set Measurements...", "area mean shape display redirect=None decimal=3");
+
+	CellIndex[cell]=cell+1;
+	NuclArea[cell]=getResult("Area",1);
+	NuclDye1MeanInt[cell]=getResult("Mean",1);
+	CellArea[cell]=getResult("Area",0);
+	CellDye2MeanInt[cell]=getResult("Mean",0);
+	
+
+	run("Clear Results");
+}
+
+
+/// print Results
+
+
+for(cell=0;cell<nbCell;cell++) {
+	setResult("Cell Index",cell,CellIndex[cell]);
+	setResult("Nucl Area (µm²)",cell,NuclArea[cell]);
+	setResult("Nucl "+Dye1Name+" Mean Int",cell,NuclDye1MeanInt[cell]);
+	setResult("Cell Area (µm²)",cell,CellArea[cell]);
+	setResult("Cell "+Dye2Name+" Mean Int",cell,CellDye2MeanInt[cell]);
+	
+}
+updateResults();
+
+selectWindow("Results");
+saveAs("Results",dirOut+shortName+"_Results.txt");
