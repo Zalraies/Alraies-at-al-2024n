@@ -1,0 +1,138 @@
+Code for cytosolic VS nuclear ratio of different stainings:
+// measure different dyes inside the nucl (tot and periphery)
+
+name=getTitle();
+dir=getDirectory("image");
+
+
+shortName=substring(name,0,lengthOf(name)-4);
+
+dirOut=dir+"Output_Analysis_"+shortName+File.separator();
+File.makeDirectory(dirOut);
+
+Stack.getDimensions(width, height, channels, slices, frames);
+
+minFilterSize=1200; /// filtre minimum en taille pour le analyse particle
+
+DapiChan=1;
+Dye1Chan=2;
+Dye2Chan=4;
+
+Dye1Name="nFkB";
+Dye2Name="cPLA2";
+
+periphEnlargement=5; /// en px
+
+manualTresh=true; /// put false to do autotreshold triangle and 2 erode
+
+midZ=floor(slices/2)+1;
+
+roiManager("reset");
+
+if(isOpen("Results")==true) {
+	selectWindow("Results");
+	run("Close");
+}
+
+run("Set Measurements...", "area mean shape display redirect=None decimal=3");
+
+/// make Nucl Mask
+selectWindow(name);
+run("Duplicate...", "title=NuclMask duplicate channels="+DapiChan+" slices="+midZ);
+run("Gaussian Blur...", "sigma=2");
+
+if(manualTresh) {
+run("Threshold...");
+setOption("BlackBackground", true);
+waitForUser("Play with treshold and apply");
+run("Fill Holes");
+} else {
+run("Auto Threshold", "method=Triangle white");
+run("Fill Holes");
+run("Erode");
+run("Erode");
+}
+saveAs("Tiff",dirOut+shortName+"_MaskNucl.tif");
+run("Analyze Particles...", "size="+minFilterSize+"-Infinity pixel exclude clear add");
+
+selectWindow(shortName+"_MaskNucl.tif");
+run("Close");
+
+nbNucl=roiManager("Count");
+roiManager("Save", dirOut+shortName+"_RoiSet.zip");
+
+/// create images for measurment
+selectWindow(name);
+run("Duplicate...", "title=Dye1 duplicate channels="+Dye1Chan+" slices="+midZ);
+selectWindow(name);
+run("Duplicate...", "title=Dye2 duplicate channels="+Dye2Chan+" slices="+midZ);
+
+/// tables for measurement
+
+NuclIndex=newArray(nbNucl);
+NuclArea=newArray(nbNucl);
+NuclPeriphArea=newArray(nbNucl);
+NuclCircu=newArray(nbNucl);
+NuclDye1MeanInt=newArray(nbNucl);
+NuclPeriphDye1MeanInt=newArray(nbNucl);
+NuclInsideDye1MeanInt=newArray(nbNucl);
+NuclDye2MeanInt=newArray(nbNucl);
+NuclPeriphDye2MeanInt=newArray(nbNucl);
+NuclInsideDye2MeanInt=newArray(nbNucl);
+
+/// Measurement
+
+for(nucl=0;nucl<nbNucl;nucl++) {
+	selectWindow("Dye1");
+	roiManager("select",nucl);
+	run("Measure");
+	selectWindow("Dye1");
+	roiManager("select",nucl);
+	run("Enlarge...", "enlarge="+periphEnlargement+" pixel");
+	run("Measure");
+
+	selectWindow("Dye2");
+	roiManager("select",nucl);
+	run("Measure");
+	selectWindow("Dye2");
+	roiManager("select",nucl);
+	run("Enlarge...", "enlarge="+periphEnlargement+" pixel");
+	run("Measure");
+
+	NuclIndex[nucl]=nucl+1;
+	NuclArea[nucl]=getResult("Area",0);
+	NuclPeriphArea[nucl]=getResult("Area",1)-getResult("Area",0);
+	NuclCircu[nucl]=getResult("Circ.",0);
+	NuclDye1MeanInt[nucl]=getResult("Mean",0);
+	NuclInsideDye1MeanInt[nucl]=getResult("Mean",1);
+	NuclPeriphDye1MeanInt[nucl]=(getResult("Area",1)*NuclInsideDye1MeanInt[nucl]-NuclArea[nucl]*NuclDye1MeanInt[nucl])/NuclPeriphArea[nucl];
+	NuclDye2MeanInt[nucl]=getResult("Mean",2);
+	NuclInsideDye2MeanInt[nucl]=getResult("Mean",3);
+	NuclPeriphDye2MeanInt[nucl]=(getResult("Area",1)*NuclInsideDye2MeanInt[nucl]-NuclArea[nucl]*NuclDye2MeanInt[nucl])/NuclPeriphArea[nucl];
+
+	run("Clear Results");
+}
+
+
+/// print Results
+
+
+for(nucl=0;nucl<nbNucl;nucl++) {
+	setResult("Nucl Index",nucl,NuclIndex[nucl]);
+	setResult("Nucl Area (µm)",nucl,NuclArea[nucl]);
+	setResult("Nucl Periph Area (µm)",nucl,NuclPeriphArea[nucl]);
+	setResult("Nucl Circu (µm)",nucl,NuclCircu[nucl]);
+	setResult("Nucl "+Dye1Name+" Mean Int",nucl,NuclDye1MeanInt[nucl]);
+	setResult("Nucl Periph "+Dye1Name+" Mean Int",nucl,NuclPeriphDye1MeanInt[nucl]);	
+	setResult("Nucl "+Dye1Name+" Mean Int",nucl,NuclInsideDye1MeanInt[nucl]);
+	setResult("Ratio "+Dye1Name+" Mean Int",nucl,NuclInsideDye1MeanInt[nucl]/NuclPeriphDye1MeanInt[nucl]);
+	setResult("Nucl "+Dye2Name+" Mean Int",nucl,NuclDye2MeanInt[nucl]);
+	setResult("Nucl Periph "+Dye2Name+" Mean Int",nucl,NuclPeriphDye2MeanInt[nucl]);	
+	setResult("Nucl "+Dye2Name+" Mean Int",nucl,NuclInsideDye2MeanInt[nucl]);
+	setResult("Ratio "+Dye2Name+" Mean Int",nucl,NuclInsideDye2MeanInt[nucl]/NuclPeriphDye2MeanInt[nucl]);
+}
+updateResults();
+
+selectWindow("Results");
+saveAs("Results",dirOut+shortName+"_Results_periphExterne.txt");
+
